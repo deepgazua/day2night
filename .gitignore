@@ -1,5 +1,5 @@
 .idea
 logs
-logs_old
+dataset
 models
 __pycache__

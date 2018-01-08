@@ -26,7 +26,7 @@ class TensorBoardNoClosing(TensorBoard):
         pass
 
 
-class MNISTGan(object):
+class MNISTAutoEncoder(object):
     def __init__(self):
         self.x_train = None
         self.x_test = None
@@ -38,7 +38,7 @@ class MNISTGan(object):
                    activation='relu', padding='same', input_shape=(28, 28, 1)),     # (28, 28, 1) -> (28, 28, 16)
             MaxPooling2D((2, 2), padding='same'),                                   # (28, 28, 16) -> (14, 14, 16)
             Conv2D(16, (3, 3), activation='relu', padding='same'),                  # (14, 14, 16) -> (14, 14, 16)
-            MaxPooling2D((2, 2), padding='same'),                                   # (14, 14, 16) -> (7, 7, 16)
+            MaxPooling2D((2, 2), padding='same'),                                   # (14, 14, 16) -> (7, 7, 16
             Conv2D(8, (3, 3), activation='relu', name='encoder'),                   # (7, 7, 16) -> (5, 5, 8)
 
             # Assembly is the reverse process of decomposition
@@ -55,6 +55,7 @@ class MNISTGan(object):
         self.generator_encoder = None
         self.generator_decoder = None
 
+        """
         self.discriminator = Sequential([
             Conv2D(16, (3, 3), activation='relu', padding='same', input_shape=(28, 28, 2)),
             MaxPooling2D((2, 2), padding='same'),
@@ -63,6 +64,7 @@ class MNISTGan(object):
             Dense(2),
             Activation('softmax')
         ])
+        """
 
         self.prepare_dataset()
 
@@ -151,11 +153,11 @@ class MNISTGan(object):
 for file in os.listdir('./logs/autoencoder'):
     shutil.move(path.join('./logs/autoencoder', file), './logs_old')
 
-gan = MNISTGan()
+ae = MNISTAutoEncoder()
 
 if path.exists('./models/autoencoder.h5'):
-    gan.load_model()
+    ae.load_model()
 else:
-    gan.fit()
+    ae.fit()
 
-gan.write_results()
+ae.write_results()
