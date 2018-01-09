@@ -81,15 +81,15 @@ class AutoEncoder(object):
             MaxPooling2D((2, 2), padding='same'),                                   # (256, 256, 16) -> (128, 128, 16)
             Conv2D(16, (3, 3), activation='relu', padding='same'),                  # (128 128, 16) -> (128, 128, 16)
             MaxPooling2D((2, 2), padding='same'),                                   # (64, 64, 16) -> (64, 64, 16)
-            Conv2D(8, (3, 3), activation='relu'),                                   # (64, 64, 16) -> (64, 64, 8)
+            Conv2D(8, (3, 3), activation='relu', padding='same'),                   # (64, 64, 16) -> (64, 64, 8)
             MaxPooling2D((2, 2), padding='same'),                                   # (64, 64, 8) -> (32, 32, 8)
-            Conv2D(8, (3, 3), activation='tanh', name='encoder'),                   # (32, 32, 16) -> (32, 32, 8)
+            Conv2D(8, (3, 3), activation='tanh', name='encoder', padding='same'),   # (32, 32, 16) -> (32, 32, 8)
 
             # Assembly is the reverse process of decomposition
-            DeConv2D(8, (3, 3),
+            DeConv2D(8, (3, 3), padding='same',
                      activation='relu', name='decoder', input_shape=(32, 32, 8)),    # (32, 32, 8) -> (32, 32, 8)
             UnPooling2D((2, 2)),                                                     # (32, 32, 8) -> (64, 64, 8)
-            DeConv2D(16, (3, 3), activation='relu'),                                 # (64, 64, 8) -> (64, 64, 16)
+            DeConv2D(16, (3, 3), activation='relu', padding='same'),                 # (64, 64, 8) -> (64, 64, 16)
             UnPooling2D((2, 2)),                                                     # (64, 64, 16) -> (128, 128, 16)
             DeConv2D(16, (3, 3), activation='relu', padding='same'),                 # (128, 128, 16) -> (128, 128, 16)
             UnPooling2D((2, 2)),                                                     # (128, 128, 16) -> (256, 256, 16)
@@ -136,6 +136,7 @@ class AutoEncoder(object):
             inputs=self.generator_autoencoder.input,
             outputs=self.generator_autoencoder.get_layer('encoder').output
         )
+
         self.generator_decoder = Sequential()
         for i in range(7, 14):
             self.generator_decoder.add(self.generator_autoencoder.layers[i])
@@ -167,9 +168,12 @@ class AutoEncoder(object):
 
         # Vector Walking
         for i in range(5):
-            random_image = self.generator_encoder.predict(np.reshape(random.choice(self.test_subset), (1, 256, 256, 3)))
+            random_image = self.generator_encoder.predict(
+                np.reshape(random.choice(self.test_subset), (1, 256, 256, 3)))
+
             transition_image = self.generator_encoder.predict(
                 np.reshape(random.choice(self.test_subset), (1, 256, 256, 3)))
+
             transition_map = transition_image - random_image
 
             for j in range(10):
