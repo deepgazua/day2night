@@ -11,7 +11,6 @@ from keras.layers import MaxPooling2D
 from keras.layers import UpSampling2D as UnPooling2D
 from keras.optimizers import Adam
 from keras.preprocessing.image import ImageDataGenerator
-from keras.utils.generic_utils import Progbar
 
 import cv2
 import numpy as np
@@ -22,7 +21,6 @@ import os
 from os import path
 import random
 import shutil
-import time
 
 
 TYPE_TRAIN = 0
@@ -139,7 +137,7 @@ class AutoEncoder(object):
             outputs=self.generator_autoencoder.get_layer('encoder').output
         )
         self.generator_decoder = Sequential()
-        for i in range(5, 10):
+        for i in range(7, 13):
             self.generator_decoder.add(self.generator_autoencoder.layers[i])
 
         self.generator_autoencoder.save('models/autoencoder_%s.h5' % self.name)
@@ -222,99 +220,68 @@ class Discriminator(object):
 
 
 # noinspection PyShadowingNames
-class TransGANTrainer(object):
-    def __init__(self, a_encoder, b_decoder, converter, discriminator, k_lambda=.001):
-        self.a_encoder = a_encoder
-        self.a_encoder.trainable = False
-        self.a_dataset = None
+class TransAETrainer(object):
+    def __init__(self, b_ae, merge_ae, converter, batch_size):
+        self.batch_size = batch_size
 
-        self.b_decoder = b_decoder
+        self.a_dataset = None
+        self.a_dataset_test = None
+
+        self.data_size = 0
+        self.data_size_test = 0
+
+        self.b_decoder = b_ae.generator_decoder
         self.b_decoder.trainable = False
-        self.b_dataset = None
+
+        self.merge_encoder = merge_ae.generator_encoder
+        self.merge_encoder.trainable = False
 
         self.converter = converter
-        self.discriminator = discriminator
 
         self.generator = Sequential()
-        self.generator.add(self.a_encoder)
+        self.generator.add(self.merge_encoder)
         self.generator.add(self.converter)
         self.generator.add(self.b_decoder)
 
-        self.generator_discriminator = Sequential()
-        self.generator_discriminator.add(self.generator)
-        self.generator_discriminator.add(self.discriminator)
+        self.generator_encoder = Sequential()
+        self.generator_encoder.add(self.generator)
+        self.generator_encoder.add(self.merge_encoder)
 
-        self.epsilon = backend.epsilon()
-        self.k = self.epsilon
-        self.k_lambda = k_lambda
+    def prepare_dataset(self, a_name):
+        self.a_dataset, self.data_size = load_dataset_flow(a_name, "train", self.batch_size)
+        self.a_dataset_test, self.data_size_test = load_dataset_flow(a_name, "test", self.batch_size)
 
-    def prepare_dataset(self, a_generator, b_generator):
-        self.a_dataset = a_generator
-        self.b_dataset = b_generator
-
-    # Referenced pbontrager/BEGAN-keras
-    def train(self, epoch, data_size, batch_size, tensor_board, gamma=0.5):
+    def train(self, epoch, tensor_board):
         """
         :type epoch: int
-        :type data_size: int
         :type batch_size: int
         :type tensor_board: TensorBoard
-        :type gamma: float
         """
-        batch_per_epoch = int(math.floor(data_size / batch_size))
-        tensor_board.set_model(self.converter)
 
-        for e in range(epoch):
-            progress = Progbar(data_size)
-            start = time.time()
-            logs = {
-                "M": 0,
-                "Loss_D": 0,
-                "Loss_G": 0,
-                "k": 0
-            }
+        def train_generator():
+            while True:
+                x = self.a_dataset.next()
+                y = self.merge_encoder.predict(x)
+                yield (x, y)
 
-            for batch in range(batch_per_epoch):
-                # Unzip identical two data to one data
+        def test_generator():
+            while True:
+                x = self.a_dataset_test.next()
+                y = self.merge_encoder.predict(x)
+                yield (x, y)
 
-                real_a = self.a_dataset.next()[0]
-                real_b = self.b_dataset.next()[0]
-
-                fake_b = self.generator.predict(real_a)
-
-                d_loss_real = self.discriminator.train(real_b)
-                d_loss_gen = self.discriminator.train(fake_b, -self.k * np.ones(batch_size))
-                d_loss = d_loss_real + d_loss_gen
-
-                self.discriminator.trainable = False
-                g_loss = self.generator_discriminator.train_on_batch(real_a, fake_b)
-                self.discriminator.trainable = True
-
-                self.k += self.k_lambda * (gamma * d_loss_real - g_loss)
-                self.k = min(max(self.k, self.epsilon), 1)
-
-                m_global = d_loss + np.abs(gamma * d_loss_real - g_loss)
-                logs["M"] += m_global
-                logs["Loss_D"] += d_loss
-                logs["Loss_G"] += g_loss
-                logs["k"] += self.k
-
-                progress.add(batch_size, values=[
-                    ("M", m_global),
-                    ("Loss_D", d_loss),
-                    ("Loss_G", g_loss),
-                    ("k", self.k)
-                ])
-
-            logs = {k: v / batch_per_epoch for k, v in logs.items()}
-            tensor_board.on_epoch_end(e, logs=logs)
-
-            print('\nEpoch {}/{}, Time: {}'.format(e + 1, epoch, time.time() - start))
+        batch_per_epoch = int(math.floor(self.data_size / self.batch_size))
+        self.generator_encoder.fit_generator(
+            train_generator(),
+            steps_per_epoch=batch_per_epoch,
+            epochs=epoch,
+            validation_data=test_generator(),
+            validation_steps=self.data_size_test,
+            callbacks=[tensor_board]
+        )
 
     def save_model(self):
         self.converter.save('models/converter.h5')
-        self.discriminator.save('models/discriminator.h5')
-
 
 # Move log files
 print_section("Updating Logs")
@@ -344,23 +311,18 @@ batch_size = 32
 epoch = 50
 
 # Training Auto Encoder
-tensor_board = TensorBoardNoClosing(log_dir='logs/autoencoder_photo')
-print_section("Auto Encoder Photo")
-a_auto_encoder = AutoEncoder("photo", tensor_board, batch_size)
-a_auto_encoder.prepare_dataset("photo")
-a_auto_encoder.fit()
-a_auto_encoder.separate_model()
-a_auto_encoder.write_results()
-tensor_board.finish()
+auto_encoders = {}
 
-tensor_board = TensorBoardNoClosing(log_dir='logs/autoencoder_monet')
-print_section("Auto Encoder Monet")
-b_auto_encoder = AutoEncoder("monet", tensor_board, batch_size)
-b_auto_encoder.prepare_dataset("monet")
-b_auto_encoder.fit()
-b_auto_encoder.separate_model()
-b_auto_encoder.write_results()
-tensor_board.finish()
+for name in ['monet', 'merged']:
+    tensor_board = TensorBoardNoClosing(log_dir='logs/autoencoder_photo')
+    print_section("Auto Encoder %s" % name[:1].upper() + name[1:])
+    auto_encoder = AutoEncoder(name, tensor_board, batch_size)
+    auto_encoder.prepare_dataset(name)
+    auto_encoder.fit()
+    auto_encoder.separate_model()
+    auto_encoder.write_results()
+    auto_encoders[name] = auto_encoder
+    tensor_board.finish()
 
 # Creating Converter and Discriminator
 tensor_board = TensorBoardNoClosing(log_dir='logs/gan')
@@ -371,14 +333,11 @@ converter = Sequential([
     Conv2D(8, (2, 2), activation='relu', padding='same')
 ])
 converter.compile(optimizer=Adam(rl=1e-4), loss='binary_crossentropy')()
-discriminator = AutoEncoder("discriminator", None, batch_size)
 
-# Training Converter and Discriminator
-dataflow, data_size = load_dataset_flow("monet", "train", batch_size)
-
-print_section("Converter, Discriminator")
-trainer = TransGANTrainer(a_auto_encoder, b_auto_encoder, converter, discriminator)
-trainer.prepare_dataset(load_dataset_flow("photo", "train", batch_size)[0], dataflow)
-trainer.train(epoch, data_size, batch_size, tensor_board)
+# Training Converter
+print_section("Converter")
+trainer = TransAETrainer(auto_encoders['monet'], auto_encoders['merged'], converter, batch_size)
+trainer.prepare_dataset("photo")
+trainer.train(epoch, tensor_board)
 trainer.save_model()
 tensor_board.finish()
