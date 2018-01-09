@@ -105,12 +105,12 @@ class AutoEncoder(object):
         self.train, self.train_count = load_dataset_flow(dataset_name, "train", self.batch_size)
         self.test, self.test_count = load_dataset_flow(dataset_name, "test", self.batch_size)
 
-        self.test_subset = map(
+        self.test_subset = list(map(
             lambda x: np.array(cv2.imread(path.join("dataset", dataset_name, "test", "images", x)))
                         .astype('float32') / 255,
 
             random.sample(os.listdir(path.join("dataset", dataset_name, "test", "images")), 5)
-        )
+        ))
 
     def fit(self):
         self.generator_autoencoder.fit_generator(
@@ -319,7 +319,12 @@ for name in ['monet', 'merged']:
     print_section("Auto Encoder %s" % name[:1].upper() + name[1:])
     auto_encoder = AutoEncoder(name, tensor_board, batch_size)
     auto_encoder.prepare_dataset(name)
-    auto_encoder.fit()
+
+    if path.exists('./models/autoencoder_%s.h5' % name):
+        auto_encoder.load_model()
+    else:
+        auto_encoder.fit()
+
     auto_encoder.separate_model()
     auto_encoder.write_results()
     auto_encoders[name] = auto_encoder
