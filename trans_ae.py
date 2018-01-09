@@ -175,7 +175,7 @@ class AutoEncoder(object):
             for j in range(10):
                 for x, _ in enumerate(random_image[0]):
                     for y, __ in enumerate(random_image[0][x]):
-                        for channel, ___ in range(3):
+                        for channel in range(3):
                             random_image[0][x][y][channel] += transition_map[0][x][y][channel] / 10
 
                 self.tensor_board.writer.add_summary(tf.summary.image(
