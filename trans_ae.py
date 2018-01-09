@@ -146,7 +146,7 @@ class AutoEncoder(object):
         # Random Vector Image Creation
         for i in range(5):
             summary = tf.summary.image("Random Vector-%s %d" % (self.name, i),
-                                       self.generator_decoder.predict(np.random.rand(1, 5, 5, 8)))
+                                       self.generator_decoder.predict(np.random.rand(1, 16, 16, 8)))
 
             self.tensor_board.writer.add_summary(summary.eval(session=backend.get_session()))
 
@@ -254,7 +254,6 @@ class TransAETrainer(object):
     def train(self, epoch, tensor_board):
         """
         :type epoch: int
-        :type batch_size: int
         :type tensor_board: TensorBoard
         """
 
@@ -285,9 +284,11 @@ class TransAETrainer(object):
 
 # Move log files
 print_section("Updating Logs")
+check_directory_and_create("models")
 check_directory_and_create("logs")
 check_directory_and_create(path.join("logs", "autoencoder_photo"))
 check_directory_and_create(path.join("logs", "autoencoder_monet"))
+check_directory_and_create(path.join("logs", "autoencoder_merged"))
 check_directory_and_create(path.join("logs", "old"))
 
 for log_directory in os.listdir("logs"):
@@ -314,7 +315,7 @@ epoch = 50
 auto_encoders = {}
 
 for name in ['monet', 'merged']:
-    tensor_board = TensorBoardNoClosing(log_dir='logs/autoencoder_photo')
+    tensor_board = TensorBoardNoClosing(log_dir=path.join('logs', "autoencoder_%s" % name))
     print_section("Auto Encoder %s" % name[:1].upper() + name[1:])
     auto_encoder = AutoEncoder(name, tensor_board, batch_size)
     auto_encoder.prepare_dataset(name)
