@@ -87,7 +87,7 @@ class AutoEncoder(object):
 
             # Assembly is the reverse process of decomposition
             DeConv2D(8, (3, 3),
-                     activation='relu', name='decoder', input_shape=(16, 16, 8)),    # (32, 32, 8) -> (32, 32, 8)
+                     activation='relu', name='decoder', input_shape=(32, 32, 8)),    # (32, 32, 8) -> (32, 32, 8)
             UnPooling2D((2, 2)),                                                     # (32, 32, 8) -> (64, 64, 8)
             DeConv2D(16, (3, 3), activation='relu'),                                 # (64, 64, 8) -> (64, 64, 16)
             UnPooling2D((2, 2)),                                                     # (64, 64, 16) -> (128, 128, 16)
@@ -137,7 +137,7 @@ class AutoEncoder(object):
             outputs=self.generator_autoencoder.get_layer('encoder').output
         )
         self.generator_decoder = Sequential()
-        for i in range(7, 13):
+        for i in range(7, 14):
             self.generator_decoder.add(self.generator_autoencoder.layers[i])
 
         self.generator_autoencoder.save('models/autoencoder_%s.h5' % self.name)
@@ -146,13 +146,13 @@ class AutoEncoder(object):
         # Random Vector Image Creation
         for i in range(5):
             summary = tf.summary.image("Random Vector-%s %d" % (self.name, i),
-                                       self.generator_decoder.predict(np.random.rand(1, 16, 16, 8)))
+                                       self.generator_decoder.predict(np.random.rand(1, 32, 32, 8)))
 
             self.tensor_board.writer.add_summary(summary.eval(session=backend.get_session()))
 
         # Auto Encoding Test
         for i in range(5):
-            random_test = np.reshape(random.choice(self.test_subset), (1, 28, 28, 1))
+            random_test = np.reshape(random.choice(self.test_subset), (1, 256, 256, 3))
             summary = tf.summary.image(
                 "Auto-Encoding-%s %d" % (self.name, i),
                 self.generator_autoencoder.predict(random_test),
@@ -167,9 +167,9 @@ class AutoEncoder(object):
 
         # Vector Walking
         for i in range(5):
-            random_image = self.generator_encoder.predict(np.reshape(random.choice(self.test_subset), (1, 28, 28, 1)))
+            random_image = self.generator_encoder.predict(np.reshape(random.choice(self.test_subset), (1, 256, 256, 3)))
             transition_image = self.generator_encoder.predict(
-                np.reshape(random.choice(self.test_subset), (1, 28, 28, 1)))
+                np.reshape(random.choice(self.test_subset), (1, 256, 256, 3)))
             transition_map = transition_image - random_image
 
             for j in range(10):
