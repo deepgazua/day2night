@@ -13,6 +13,7 @@ from keras.optimizers import Adam
 from keras.preprocessing.image import ImageDataGenerator
 from keras.utils.generic_utils import Progbar
 
+import cv2
 import numpy as np
 import tensorflow as tf
 
@@ -32,32 +33,14 @@ def print_section(section_name):
     print("====================%s====================" % section_name)
 
 
-def prepare_dataset(dataset):
-    # Use channels_last data format
-
-    """
-    train, test = dataset
-    train = train.astype('float32') / 255.
-    test = test.astype('float32') / 255.
-    return np.reshape(train, (len(train), 256, 256, 3)), np.reshape(test, (len(test), 256, 256, 3))
-    """
-
-    return dataset
-
-
-def load_dataset(dataset_name):
-    f = np.load(path.join("dataset", "%s.npz" % dataset_name))
-    train = f['train']
-    test = f['test']
-    f.close()
-    return train, test
-
-
 # noinspection PyShadowingNames
-def load_dataset_flow(dataset_name, batch_size, dataset_type=TYPE_TRAIN):
-    dataset = load_dataset(dataset_name)[dataset_type]
-    data_generator = ImageDataGenerator()
-    return data_generator.flow(dataset, batch_size), len(dataset)
+def load_dataset_flow(dataset, set_type, batch_size):
+    set_dir = path.join("dataset", dataset, set_type)
+    data_generator = ImageDataGenerator(samplewise_std_normalization=True)
+    return data_generator.flow_from_directory(
+        set_dir, target_size=(256, 256), class_mode="input",
+        batch_size=batch_size, shuffle=True,
+    ), len(os.listdir(path.join(set_dir, "images")))
 
 
 def check_directory_and_create(directory_name):
@@ -79,11 +62,18 @@ class TensorBoardNoClosing(TensorBoard):
 
 
 class AutoEncoder(object):
-    def __init__(self, name, encoder_tensor_board):
+    # noinspection PyShadowingNames
+    def __init__(self, name, encoder_tensor_board, batch_size):
         self.name = name
 
-        self.x_train = None
-        self.x_test = None
+        self.train = None
+        self.train_count = 0
+
+        self.test = None
+        self.test_count = 0
+        self.test_subset = None
+
+        self.batch_size = batch_size
 
         self.tensor_board = encoder_tensor_board
 
@@ -108,19 +98,29 @@ class AutoEncoder(object):
             DeConv2D(3, (5, 5), activation='tanh', padding='same')                   # (256, 256, 16) -> (256, 256, 3)
         ])
 
-        self.generator_autoencoder.compile(optimizer='adam', loss='binary_crossentropy')
+        self.generator_autoencoder.compile(optimizer='adam', loss='mean_squared_error')
 
         self.generator_encoder = None
         self.generator_decoder = None
 
-    def prepare_dataset(self, dataset):
-        self.x_train, self.x_test = prepare_dataset(dataset)
+    def prepare_dataset(self, dataset_name):
+        self.train, self.train_count = load_dataset_flow(dataset_name, "train", self.batch_size)
+        self.test, self.test_count = load_dataset_flow(dataset_name, "test", self.batch_size)
+
+        self.test_subset = map(
+            lambda x: np.array(cv2.imread(path.join("dataset", dataset_name, "test", "images", x)))
+                        .astype('float32') / 255,
+
+            random.sample(os.listdir(path.join("dataset", dataset_name, "test", "images")), 5)
+        )
 
     def fit(self):
-        self.generator_autoencoder.fit(
-            self.x_train, self.x_train,
-            epochs=15, batch_size=128, shuffle=True,
-            validation_data=(self.x_test, self.x_test),
+        self.generator_autoencoder.fit_generator(
+            self.train,
+            steps_per_epoch=int(math.floor(self.train_count / self.batch_size)),
+            epochs=15,
+            validation_data=self.test,
+            validation_steps=self.test_count,
             callbacks=[self.tensor_board]
         )
         self.separate_model()
@@ -145,7 +145,6 @@ class AutoEncoder(object):
         self.generator_autoencoder.save('models/autoencoder_%s.h5' % self.name)
 
     def write_results(self):
-
         # Random Vector Image Creation
         for i in range(5):
             summary = tf.summary.image("Random Vector-%s %d" % (self.name, i),
@@ -155,7 +154,7 @@ class AutoEncoder(object):
 
         # Auto Encoding Test
         for i in range(5):
-            random_test = np.reshape(random.choice(self.x_test), (1, 28, 28, 1))
+            random_test = np.reshape(random.choice(self.test_subset), (1, 28, 28, 1))
             summary = tf.summary.image(
                 "Auto-Encoding-%s %d" % (self.name, i),
                 self.generator_autoencoder.predict(random_test),
@@ -170,8 +169,9 @@ class AutoEncoder(object):
 
         # Vector Walking
         for i in range(5):
-            random_image = self.generator_encoder.predict(np.reshape(random.choice(self.x_test), (1, 28, 28, 1)))
-            transition_image = self.generator_encoder.predict(np.reshape(random.choice(self.x_test), (1, 28, 28, 1)))
+            random_image = self.generator_encoder.predict(np.reshape(random.choice(self.test_subset), (1, 28, 28, 1)))
+            transition_image = self.generator_encoder.predict(
+                np.reshape(random.choice(self.test_subset), (1, 28, 28, 1)))
             transition_map = transition_image - random_image
 
             for j in range(10):
@@ -261,7 +261,7 @@ class TransGANTrainer(object):
         :type tensor_board: TensorBoard
         :type gamma: float
         """
-        batch_per_epoch = int(math.ceil(data_size / batch_size))
+        batch_per_epoch = int(math.floor(data_size / batch_size))
         tensor_board.set_model(self.converter)
 
         for e in range(epoch):
@@ -275,8 +275,10 @@ class TransGANTrainer(object):
             }
 
             for batch in range(batch_per_epoch):
-                real_a = self.a_dataset.next()
-                real_b = self.b_dataset.next()
+                # Unzip identical two data to one data
+
+                real_a = self.a_dataset.next()[0]
+                real_b = self.b_dataset.next()[0]
 
                 fake_b = self.generator.predict(real_a)
 
@@ -338,11 +340,14 @@ for log_directory in os.listdir("logs"):
 
         shutil.move(current_log_file, path.join("logs", "old", log_directory + " - " + log_file))
 
+batch_size = 32
+epoch = 50
+
 # Training Auto Encoder
 tensor_board = TensorBoardNoClosing(log_dir='logs/autoencoder_photo')
 print_section("Auto Encoder Photo")
-a_auto_encoder = AutoEncoder("photo", tensor_board)
-a_auto_encoder.prepare_dataset(load_dataset("photo"))
+a_auto_encoder = AutoEncoder("photo", tensor_board, batch_size)
+a_auto_encoder.prepare_dataset("photo")
 a_auto_encoder.fit()
 a_auto_encoder.separate_model()
 a_auto_encoder.write_results()
@@ -350,8 +355,8 @@ tensor_board.finish()
 
 tensor_board = TensorBoardNoClosing(log_dir='logs/autoencoder_monet')
 print_section("Auto Encoder Monet")
-b_auto_encoder = AutoEncoder("monet", tensor_board)
-b_auto_encoder.prepare_dataset(load_dataset("monet"))
+b_auto_encoder = AutoEncoder("monet", tensor_board, batch_size)
+b_auto_encoder.prepare_dataset("monet")
 b_auto_encoder.fit()
 b_auto_encoder.separate_model()
 b_auto_encoder.write_results()
@@ -366,17 +371,14 @@ converter = Sequential([
     Conv2D(8, (2, 2), activation='relu', padding='same')
 ])
 converter.compile(optimizer=Adam(rl=1e-4), loss='binary_crossentropy')()
-discriminator = AutoEncoder("D", None)
+discriminator = AutoEncoder("discriminator", None, batch_size)
 
 # Training Converter and Discriminator
-batch_size = 128
-epoch = 50
-
-dataflow, data_size = load_dataset_flow("monet", batch_size)
+dataflow, data_size = load_dataset_flow("monet", "train", batch_size)
 
 print_section("Converter, Discriminator")
 trainer = TransGANTrainer(a_auto_encoder, b_auto_encoder, converter, discriminator)
-trainer.prepare_dataset(load_dataset_flow("photo", batch_size)[0], dataflow)
+trainer.prepare_dataset(load_dataset_flow("photo", "train", batch_size)[0], dataflow)
 trainer.train(epoch, data_size, batch_size, tensor_board)
 trainer.save_model()
 tensor_board.finish()
