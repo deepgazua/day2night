@@ -175,7 +175,8 @@ class AutoEncoder(object):
             for j in range(10):
                 for x, _ in enumerate(random_image[0]):
                     for y, __ in enumerate(random_image[0][x]):
-                        random_image[0][x][y] += transition_map[0][x][y] / 10
+                        for channel, ___ in range(3):
+                            random_image[0][x][y][channel] += transition_map[0][x][y][channel] / 10
 
                 self.tensor_board.writer.add_summary(tf.summary.image(
                     'Vector-Space-Walking-{0}_{1}_{2}/10'.format(self.name, i, j),
