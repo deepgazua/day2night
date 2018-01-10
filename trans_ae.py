@@ -83,12 +83,18 @@ class AutoEncoder(object):
             MaxPooling2D((2, 2), padding='same'),                                   # (64, 64, 16) -> (64, 64, 16)
             Conv2D(8, (3, 3), activation='relu', padding='same'),                   # (64, 64, 16) -> (64, 64, 8)
             MaxPooling2D((2, 2), padding='same'),                                   # (64, 64, 8) -> (32, 32, 8)
-            Conv2D(8, (3, 3), activation='relu', padding='same'),                   # (32, 32, 16) -> (32, 32, 8)
-            Conv2D(8, (3, 3), activation='tanh', name='encoder', padding='same'),   # (32, 32, 16) -> (32, 32, 8)
+            Conv2D(8, (3, 3), activation='relu', padding='same'),                   # (32, 32, 8) -> (32, 32, 8)
+            MaxPooling2D((2, 2), padding='same'),                                   # (32, 32, 8) -> (16, 16, 8)
+            Conv2D(16, (3, 3), activation='relu', padding='same'),                  # (16, 16, 8) -> (16, 16, 16)
+            MaxPooling2D((2, 2), padding='same'),                                   # (16, 16, 16) -> (8, 8, 16)
+            Conv2D(16, (4, 4), activation='tanh', name='encoder', padding='same'),  # (8, 8, 16) -> (8, 8, 16)
 
             # Assembly is the reverse process of decomposition
-            DeConv2D(8, (3, 3), padding='same',
-                     activation='relu', name='decoder', input_shape=(32, 32, 8)),    # (32, 32, 8) -> (32, 32, 8)
+            DeConv2D(16, (4, 4), padding='same',
+                     activation='relu', name='decoder', input_shape=(32, 32, 8)),    # (8, 8, 16) -> (8, 8, 16)
+            UnPooling2D((2, 2)),                                                     # (8, 8, 16) -> (16, 16, 16)
+            DeConv2D(8, (3, 3), activation='relu', padding='same'),                  # (16, 16, 16) -> (16, 16, 8)
+            UnPooling2D((2, 2)),                                                     # (16, 16, 8) -> (32, 32, 8)
             DeConv2D(8, (3, 3), activation='relu', padding='same'),                  # (32, 32, 8) -> (32, 32, 8)
             UnPooling2D((2, 2)),                                                     # (32, 32, 8) -> (64, 64, 8)
             DeConv2D(16, (3, 3), activation='relu', padding='same'),                 # (64, 64, 8) -> (64, 64, 16)
@@ -137,7 +143,7 @@ class AutoEncoder(object):
         )
 
         self.generator_decoder = Sequential()
-        for i in range(8, 16):
+        for i in range(11, 22):
             self.generator_decoder.add(self.generator_autoencoder.layers[i])
 
         self.generator_autoencoder.save('models/autoencoder_%s.h5' % self.name)
@@ -146,7 +152,7 @@ class AutoEncoder(object):
         # Random Vector Image Creation
         for i in range(5):
             summary = tf.summary.image("Random Vector-%s %d" % (self.name, i),
-                                       self.generator_decoder.predict(np.random.rand(1, 32, 32, 8)))
+                                       self.generator_decoder.predict(np.random.rand(1, 8, 8, 16)))
 
             self.tensor_board.writer.add_summary(summary.eval(session=backend.get_session()))
 
@@ -337,10 +343,10 @@ for name in ['monet', 'merged']:
 # Creating Converter and Discriminator
 tensor_board = TensorBoardNoClosing(log_dir='logs/gan')
 converter = Sequential([
-    Conv2D(16, (4, 4), activation='relu', padding='same', input_shape=(32, 32, 8)),
-    Conv2D(16, (3, 3), activation='relu', padding='same'),
+    Conv2D(16, (5, 5), activation='relu', padding='same', input_shape=(8, 8, 16)),
     Conv2D(8, (3, 3), activation='relu', padding='same'),
-    Conv2D(8, (2, 2), activation='relu', padding='same')
+    Conv2D(8, (3, 3), activation='relu', padding='same'),
+    Conv2D(16, (2, 2), activation='relu', padding='same')
 ])
 converter.compile(optimizer=Adam(rl=1e-4), loss='binary_crossentropy')()
 
