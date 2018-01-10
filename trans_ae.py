@@ -91,7 +91,7 @@ class AutoEncoder(object):
 
             # Assembly is the reverse process of decomposition
             DeConv2D(16, (4, 4), padding='same',
-                     activation='relu', name='decoder', input_shape=(32, 32, 8)),    # (8, 8, 16) -> (8, 8, 16)
+                     activation='relu', name='decoder', input_shape=(8, 8, 16)),     # (8, 8, 16) -> (8, 8, 16)
             UnPooling2D((2, 2)),                                                     # (8, 8, 16) -> (16, 16, 16)
             DeConv2D(8, (3, 3), activation='relu', padding='same'),                  # (16, 16, 16) -> (16, 16, 8)
             UnPooling2D((2, 2)),                                                     # (16, 16, 8) -> (32, 32, 8)
