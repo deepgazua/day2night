@@ -34,7 +34,7 @@ def print_section(section_name):
 # noinspection PyShadowingNames
 def load_dataset_flow(dataset, set_type, batch_size):
     set_dir = path.join("dataset", dataset, set_type)
-    data_generator = ImageDataGenerator(samplewise_std_normalization=True)
+    data_generator = ImageDataGenerator(preprocessing_function=lambda x: x.astype('float32') / 255)
     return data_generator.flow_from_directory(
         set_dir, target_size=(256, 256), class_mode="input",
         batch_size=batch_size, shuffle=True,
@@ -96,7 +96,7 @@ class AutoEncoder(object):
             DeConv2D(3, (5, 5), activation='tanh', padding='same')                   # (256, 256, 16) -> (256, 256, 3)
         ])
 
-        self.generator_autoencoder.compile(optimizer='adam', loss='mean_squared_error')
+        self.generator_autoencoder.compile(optimizer='adam', loss='binary_crossentropy')
 
         self.generator_encoder = None
         self.generator_decoder = None
@@ -116,15 +116,12 @@ class AutoEncoder(object):
         self.generator_autoencoder.fit_generator(
             self.train,
             steps_per_epoch=int(math.floor(self.train_count / self.batch_size)),
-            epochs=15,
+            epochs=50,
             validation_data=self.test,
             validation_steps=self.test_count,
             callbacks=[self.tensor_board]
         )
         self.separate_model()
-
-    def train(self, data, weights=None):
-        return self.generator_autoencoder.train_on_batch(data, data, weights)
 
     def load_model(self):
         self.generator_autoencoder = load_model('models/autoencoder_%s.h5' % self.name)
